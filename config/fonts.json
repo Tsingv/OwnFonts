@@ -3,7 +3,7 @@
     "repo": "be5invis/Sarasa-Gothic",
     "asset_regex": "^SarasaTermSC-TTF-{version}\\.7z$",
     "file_regex": "^SarasaTermSC-(Regular|Bold)\\.ttf$",
-    "subset": "terminal-sc"
+    "subset": "terminal-sc-relaxed"
   },
   "lxgw-wenkai-gb": {
     "repo": "lxgw/LxgwWenkaiGB",
