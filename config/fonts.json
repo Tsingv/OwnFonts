@@ -1,0 +1,26 @@
+{
+  "sarasa-term-sc": {
+    "repo": "be5invis/Sarasa-Gothic",
+    "asset_regex": "^SarasaTermSC-TTF-{version}\\.7z$",
+    "file_regex": "^SarasaTermSC-(Regular|Bold)\\.ttf$",
+    "subset": "terminal-sc"
+  },
+  "lxgw-wenkai-gb": {
+    "repo": "lxgw/LxgwWenkaiGB",
+    "asset_regex": "^lxgw-wenkai-gb-{tag}\\.zip$",
+    "file_regex": "^LXGWWenKaiGB-(Regular|Medium)\\.ttf$",
+    "subset": "none"
+  },
+  "lxgw-wenkai-mono-gb": {
+    "repo": "lxgw/LxgwWenkaiGB",
+    "asset_regex": "^lxgw-wenkai-gb-{tag}\\.zip$",
+    "file_regex": "^LXGWWenKaiMonoGB-(Regular|Medium)\\.ttf$",
+    "subset": "none"
+  },
+  "lxgw-neoxi-hei": {
+    "repo": "lxgw/LxgwNeoXiHei",
+    "asset_regex": "^LXGWNeoXiHei(Plus)?\\.ttf$",
+    "file_regex": "^LXGWNeoXiHei(Plus)?\\.ttf$",
+    "subset": "none"
+  }
+}
