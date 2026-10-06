@@ -77,12 +77,12 @@ jobs:
           {
             echo "### Resolved inputs"
             echo
-            echo "- Sarasa Gothic: `$sarasa_tag`"
-            echo "- LXGW WenKai GB: `$wenkai_tag`"
-            echo "- LXGW Neo XiHei: `$neoxi_tag`"
-            echo "- Nerd Fonts: `$nerd_tag`"
-            echo "- Release: `$release_tag`"
-            echo "- Build required: `$do_build`"
+            echo "- Sarasa Gothic: $sarasa_tag"
+            echo "- LXGW WenKai GB: $wenkai_tag"
+            echo "- LXGW Neo XiHei: $neoxi_tag"
+            echo "- Nerd Fonts: $nerd_tag"
+            echo "- Release: $release_tag"
+            echo "- Build required: $do_build"
           } >> "$GITHUB_STEP_SUMMARY"
 
   build:
@@ -295,11 +295,11 @@ jobs:
           cat > release-notes.md <<EOF
           Automated OwnFonts build.
 
-          - Sarasa Gothic: `$SARASA_TAG`
-          - LXGW WenKai GB: `$WENKAI_TAG`
-          - LXGW Neo XiHei: `$NEOXI_TAG`
-          - Nerd Fonts: `$NERD_TAG`
-          - Build revision: `$GITHUB_SHA`
+          - Sarasa Gothic: $SARASA_TAG
+          - LXGW WenKai GB: $WENKAI_TAG
+          - LXGW Neo XiHei: $NEOXI_TAG
+          - Nerd Fonts: $NERD_TAG
+          - Build revision: $GITHUB_SHA
 
           All published fonts passed source-codepoint retention, complete
           Symbols Nerd Font coverage, U+F01BC (md-database), and glyph-count
