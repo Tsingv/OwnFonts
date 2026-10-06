@@ -1,0 +1,315 @@
+name: Build patched fonts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-fonts.yml"
+      - "scripts/**"
+      - "config/**"
+      - "LICENSES.md"
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force a rebuild even if the same inputs were already released"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ownfonts-build
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      do_build: ${{ steps.resolve.outputs.do_build }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      sarasa_tag: ${{ steps.resolve.outputs.sarasa_tag }}
+      wenkai_tag: ${{ steps.resolve.outputs.wenkai_tag }}
+      neoxi_tag: ${{ steps.resolve.outputs.neoxi_tag }}
+      nerd_tag: ${{ steps.resolve.outputs.nerd_tag }}
+    steps:
+      - name: Resolve latest upstream releases
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest() {
+            gh api "repos/$1/releases/latest" --jq '.tag_name'
+          }
+
+          sarasa_tag="$(latest be5invis/Sarasa-Gothic)"
+          wenkai_tag="$(latest lxgw/LxgwWenkaiGB)"
+          neoxi_tag="$(latest lxgw/LxgwNeoXiHei)"
+          nerd_tag="$(latest ryanoasis/nerd-fonts)"
+
+          build_rev="${GITHUB_SHA:0:8}"
+          release_tag="fonts-sarasa-${sarasa_tag#v}-wenkai-${wenkai_tag#v}-neoxi-${neoxi_tag#v}-nf-${nerd_tag#v}-r${build_rev}"
+
+          if [[ "$FORCE" == "true" ]]; then
+            release_tag="${release_tag}-run${GITHUB_RUN_NUMBER}"
+            do_build=true
+          elif gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            do_build=false
+          else
+            do_build=true
+          fi
+
+          {
+            echo "sarasa_tag=$sarasa_tag"
+            echo "wenkai_tag=$wenkai_tag"
+            echo "neoxi_tag=$neoxi_tag"
+            echo "nerd_tag=$nerd_tag"
+            echo "release_tag=$release_tag"
+            echo "do_build=$do_build"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Resolved inputs"
+            echo
+            echo "- Sarasa Gothic: `$sarasa_tag`"
+            echo "- LXGW WenKai GB: `$wenkai_tag`"
+            echo "- LXGW Neo XiHei: `$neoxi_tag`"
+            echo "- Nerd Fonts: `$nerd_tag`"
+            echo "- Release: `$release_tag`"
+            echo "- Build required: `$do_build`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: resolve
+    if: ${{ needs.resolve.outputs.do_build == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        family:
+          - sarasa-term-sc
+          - lxgw-wenkai-gb
+          - lxgw-wenkai-mono-gb
+          - lxgw-neoxi-hei
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y fontforge python3-fontforge p7zip-full
+          python3 -m pip install --disable-pip-version-check fonttools
+
+      - name: Download Nerd Fonts patcher and reference symbol fonts
+        env:
+          NERD_TAG: ${{ needs.resolve.outputs.nerd_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p nerd-patcher nerd-symbols
+
+          curl -fsSL             "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_TAG}/FontPatcher.zip"             -o FontPatcher.zip
+          unzip -q FontPatcher.zip -d nerd-patcher
+
+          curl -fsSL             "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_TAG}/NerdFontsSymbolsOnly.zip"             -o NerdFontsSymbolsOnly.zip
+          unzip -q NerdFontsSymbolsOnly.zip -d nerd-symbols
+
+          test -f nerd-patcher/font-patcher
+          find nerd-symbols -name 'SymbolsNerdFont-Regular.ttf' -print -quit | grep -q .
+          find nerd-symbols -name 'SymbolsNerdFontMono-Regular.ttf' -print -quit | grep -q .
+
+      - name: Select family upstream version
+        id: upstream
+        env:
+          FAMILY: ${{ matrix.family }}
+          SARASA_TAG: ${{ needs.resolve.outputs.sarasa_tag }}
+          WENKAI_TAG: ${{ needs.resolve.outputs.wenkai_tag }}
+          NEOXI_TAG: ${{ needs.resolve.outputs.neoxi_tag }}
+        run: |
+          set -euo pipefail
+          case "$FAMILY" in
+            sarasa-term-sc)
+              tag="$SARASA_TAG"
+              ;;
+            lxgw-wenkai-gb|lxgw-wenkai-mono-gb)
+              tag="$WENKAI_TAG"
+              ;;
+            lxgw-neoxi-hei)
+              tag="$NEOXI_TAG"
+              ;;
+            *)
+              echo "Unknown family: $FAMILY" >&2
+              exit 1
+              ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download selected source fonts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/fetch_sources.py             --family "${{ matrix.family }}"             --tag "${{ steps.upstream.outputs.tag }}"             --output sources
+
+      - name: Prepare source fonts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p prepared
+          report="${{ matrix.family }}-report.txt"
+          : > "$report"
+
+          subset_profile="$(jq -r --arg family "${{ matrix.family }}" '.[$family].subset' config/fonts.json)"
+          fonts=(sources/*.ttf)
+          if (( ${#fonts[@]} == 0 )); then
+            echo "No source fonts selected" >&2
+            exit 1
+          fi
+
+          for src in "${fonts[@]}"; do
+            dst="prepared/$(basename "$src")"
+            {
+              echo "============================================================"
+              echo "Source: $(basename "$src")"
+              echo "Subset profile: $subset_profile"
+            } | tee -a "$report"
+
+            if [[ "$subset_profile" == "none" ]]; then
+              cp "$src" "$dst"
+            else
+              python3 scripts/subset_font.py                 "$src" "$dst"                 --profile "$subset_profile" | tee -a "$report"
+            fi
+          done
+
+      - name: Patch and verify complete Nerd Symbols
+        shell: bash
+        env:
+          NERD_TAG: ${{ needs.resolve.outputs.nerd_tag }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          family="${{ matrix.family }}"
+          report="${family}-report.txt"
+          package="package/${family}"
+          mkdir -p "$package" work
+
+          ref_nf="$(find nerd-symbols -type f -name 'SymbolsNerdFont-Regular.ttf' -print -quit)"
+          ref_nfm="$(find nerd-symbols -type f -name 'SymbolsNerdFontMono-Regular.ttf' -print -quit)"
+          test -n "$ref_nf"
+          test -n "$ref_nfm"
+
+          fonts=(prepared/*.ttf)
+          for src in "${fonts[@]}"; do
+            stem="$(basename "$src" .ttf)"
+
+            for mode in nf nfm; do
+              outdir="work/${stem}/${mode}"
+              mkdir -p "$outdir"
+
+              args=(--complete --careful --no-progressbars)
+              if [[ "$mode" == "nfm" ]]; then
+                args+=(--single-width-glyphs)
+                reference="$ref_nfm"
+              else
+                reference="$ref_nf"
+              fi
+
+              {
+                echo
+                echo "------------------------------------------------------------"
+                echo "Patching: $(basename "$src")"
+                echo "Mode: $mode"
+              } | tee -a "$report"
+
+              fontforge -script nerd-patcher/font-patcher                 "${args[@]}"                 --outputdir "$outdir"                 "$src"
+
+              generated=("$outdir"/*.ttf)
+              if (( ${#generated[@]} != 1 )); then
+                echo "Expected one patched TTF, found ${#generated[@]} in $outdir" >&2
+                exit 1
+              fi
+
+              patched="${generated[0]}"
+              python3 scripts/verify_font.py                 --source "$src"                 --patched "$patched"                 --symbols "$reference"                 --mode "$mode" | tee -a "$report"
+
+              cp "$patched" "$package/"
+            done
+          done
+
+          cp LICENSES.md "$package/"
+          cat > "$package/BUILD_INFO.txt" <<EOF
+          family=$family
+          family_upstream_tag=${{ steps.upstream.outputs.tag }}
+          nerd_fonts_tag=$NERD_TAG
+          build_revision=${GITHUB_SHA}
+          patcher_flags=--complete --careful
+          mono_flag=--single-width-glyphs
+          EOF
+
+          (
+            cd package
+            zip -9 -r "../${family}.zip" "$family"
+          )
+
+      - name: Upload family package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.family }}
+          path: |
+            ${{ matrix.family }}.zip
+            ${{ matrix.family }}-report.txt
+          if-no-files-found: error
+
+  release:
+    needs: [resolve, build]
+    if: ${{ needs.resolve.outputs.do_build == 'true' && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          SARASA_TAG: ${{ needs.resolve.outputs.sarasa_tag }}
+          WENKAI_TAG: ${{ needs.resolve.outputs.wenkai_tag }}
+          NEOXI_TAG: ${{ needs.resolve.outputs.neoxi_tag }}
+          NERD_TAG: ${{ needs.resolve.outputs.nerd_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > release-notes.md <<EOF
+          Automated OwnFonts build.
+
+          - Sarasa Gothic: `$SARASA_TAG`
+          - LXGW WenKai GB: `$WENKAI_TAG`
+          - LXGW Neo XiHei: `$NEOXI_TAG`
+          - Nerd Fonts: `$NERD_TAG`
+          - Build revision: `$GITHUB_SHA`
+
+          All published fonts passed source-codepoint retention, complete
+          Symbols Nerd Font coverage, U+F01BC (md-database), and glyph-count
+          checks. See the attached per-family reports for details.
+          EOF
+
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f \( -name '*.zip' -o -name '*-report.txt' \) -print | sort)
+          if (( ${#assets[@]} == 0 )); then
+            echo "No release assets found" >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" "${assets[@]}"             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "OwnFonts $RELEASE_TAG"             --notes-file release-notes.md
