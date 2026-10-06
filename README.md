@@ -7,7 +7,7 @@ releases.
 
 | Family | Upstream files selected | Pre-processing |
 | --- | --- | --- |
-| Sarasa Term SC | Regular, Bold | `terminal-sc` subset |
+| Sarasa Term SC | Regular, Bold | `terminal-sc-relaxed` subset |
 | LXGW WenKai GB | Regular, Medium | none |
 | LXGW WenKai Mono GB | Regular, Medium | none |
 | LXGW Neo XiHei | normal, Plus | none |
@@ -48,20 +48,26 @@ font.
 Sarasa Term SC is already a very large CJK font. Adding the complete Nerd Fonts
 symbol set can push a single TTF past the OpenType glyph-count limit.
 
-The `terminal-sc` profile keeps a terminal-focused SC repertoire:
+The `terminal-sc-relaxed` profile is deliberately conservative: it starts by
+keeping **all encoded source characters** and removes only the largest,
+least-terminal-oriented repertoires needed to make room for the complete Nerd
+Fonts symbol set.
 
-- Latin, Greek, Cyrillic, combining marks;
-- common punctuation, arrows, math, box drawing, block elements and Braille;
-- Hiragana, Katakana and Bopomofo;
-- CJK Unified Ideographs and Extension A;
-- CJK compatibility forms/ideographs;
-- every character decodable through GBK that exists in the source;
-- all source Private Use Area characters and variation selectors.
+Currently it removes:
 
-Large ranges that are not normally needed by a Simplified-Chinese terminal,
-notably Hangul syllables and CJK Extension B+, are not retained unless covered
-by one of the explicit preservation rules above. This subset is intentionally
-**not** advertised as a drop-in replacement for the full upstream Sarasa font.
+- most precomposed Hangul syllables (`U+AC00–U+D7AF`);
+- CJK Unified Ideographs Extensions B, C, D, E, F, G, H and I.
+
+Common Korean text is not removed wholesale: characters representable by
+EUC-KR (the KS X 1001 repertoire, including common precomposed Hangul
+syllables) are added back. Hangul Jamo, Compatibility Jamo, non-CJK scripts,
+symbols, source PUA characters and other source Unicode coverage are retained
+unless they fall inside one of the explicit removal ranges.
+
+All reachable OpenType layout features are preserved with `layout_features=*`
+instead of maintaining a feature whitelist. This subset is still intentionally
+**not** advertised as a byte-for-byte or repertoire-identical replacement for
+the full upstream Sarasa font.
 
 LXGW WenKai GB and LXGW Neo XiHei are patched without subsetting unless they
 eventually exceed the limit; the verification step will catch that.
